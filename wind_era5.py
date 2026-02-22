@@ -11,10 +11,12 @@ la composante zonale (longitude).
 """
 import os
 import datetime
+import warnings
 
 import numpy as np
 import xarray as xr
 from scipy.interpolate import RegularGridInterpolator
+from config import GRID
 
 
 # ── Singleton : données ERA5 chargées une seule fois ──────────────────
@@ -81,6 +83,15 @@ def _load(era5_path):
 
     ds.close()
 
+    if (lats.min() > GRID["lat_min"] or lats.max() < GRID["lat_max"] or
+            lons.min() > GRID["lon_min"] or lons.max() < GRID["lon_max"]):
+        warnings.warn(
+            "Le domaine ERA5 est plus petit que la grille de simulation ; "
+            "certaines particules pourront être hors domaine.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+
     print(f"OK — {len(t_hours)} pas de temps, "
           f"lat [{lats[0]:.1f}→{lats[-1]:.1f}], "
           f"lon [{lons[0]:.1f}→{lons[-1]:.1f}], "
@@ -114,7 +125,7 @@ def _interpolator(t_idx, component):
 
 
 def get_wind(lons, lats, t_hours, era5_path="data/era5_chernobyl_1986.nc",
-             turbulence=0.25):
+             turbulence=0.25, rng=None):
     """
     Vent ERA5 interpolé à chaque position de particule.
 
@@ -133,6 +144,17 @@ def get_wind(lons, lats, t_hours, era5_path="data/era5_chernobyl_1986.nc",
     data = _load(era5_path)
     t_arr = data["t_hours"]
     n = len(lons)
+    outside_domain = (
+        (lats < data["lats"].min()) | (lats > data["lats"].max()) |
+        (lons < data["lons"].min()) | (lons > data["lons"].max())
+    )
+    if np.any(outside_domain):
+        warnings.warn(
+            f"{int(np.sum(outside_domain))} particule(s) hors domaine ERA5 ; "
+            "fill_value=0 appliqué.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
 
     # ── Interpolation temporelle ──────────────────────────────────────
     # Trouver les deux pas de temps encadrants
@@ -154,6 +176,14 @@ def get_wind(lons, lats, t_hours, era5_path="data/era5_chernobyl_1986.nc",
     # Interpolation temporelle linéaire
     u_ms = (1 - alpha) * u0 + alpha * u1   # m/s
     v_ms = (1 - alpha) * v0 + alpha * v1   # m/s
+    if np.any(np.isnan(u_ms)) or np.any(np.isnan(v_ms)):
+        warnings.warn(
+            "NaN détectés dans les vents ERA5 interpolés ; remplacement par 0.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        u_ms = np.nan_to_num(u_ms, nan=0.0)
+        v_ms = np.nan_to_num(v_ms, nan=0.0)
 
     # ── Conversion m/s → degrés/heure ─────────────────────────────────
     # 1° latitude  ≈ 111 km  (constant)
@@ -167,9 +197,10 @@ def get_wind(lons, lats, t_hours, era5_path="data/era5_chernobyl_1986.nc",
     # ── Bruit turbulent ───────────────────────────────────────────────
     # Proportionnel à la vitesse locale du vent
     if turbulence > 0:
+        random_source = rng if rng is not None else np.random
         wind_mag = np.sqrt(u_deg**2 + v_deg**2)
         sigma = turbulence * np.maximum(wind_mag, 0.005)
-        u_deg += np.random.normal(0, sigma, n)
-        v_deg += np.random.normal(0, sigma, n)
+        u_deg += random_source.normal(0, sigma, n)
+        v_deg += random_source.normal(0, sigma, n)
 
     return u_deg, v_deg

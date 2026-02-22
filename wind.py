@@ -11,7 +11,7 @@ import numpy as np
 from config import WIND_PHASES
 
 
-def get_wind(lons, lats, t_hours):
+def get_wind(lons, lats, t_hours, rng=None):
     """
     Retourne les composantes (u, v) du vent en degrés/heure
     pour un instant donné (en heures depuis l'accident).
@@ -61,7 +61,8 @@ def get_wind(lons, lats, t_hours):
         v_std = (1 - alpha) * prev_phase["v_std"] + alpha * phase["v_std"]
 
     # Vent moyen + fluctuations turbulentes
-    u = u_mean + np.random.normal(0, u_std, n_particles)
-    v = v_mean + np.random.normal(0, v_std, n_particles)
+    random_source = rng if rng is not None else np.random
+    u = u_mean + random_source.normal(0, u_std, n_particles)
+    v = v_mean + random_source.normal(0, v_std, n_particles)
 
     return u, v
