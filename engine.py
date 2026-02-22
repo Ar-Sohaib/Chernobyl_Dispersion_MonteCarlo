@@ -4,7 +4,7 @@ Advection par le vent + diffusion turbulente sur la grille lat/lon.
 Gère l'émission continue de la source pendant la durée d'émission.
 """
 import numpy as np
-from config import SOURCE, DIFFUSION, SIMULATION, GRID
+from config import SOURCE, DIFFUSION, SIMULATION, GRID, WIND
 
 # ── Sélection du modèle de vent ───────────────────────────────────────
 try:
@@ -31,8 +31,7 @@ def run_single_simulation(seed=None):
     traj_lat : ndarray (n_steps+1, n_particles)
     active   : ndarray (n_steps+1, n_particles) — bool
     """
-    if seed is not None:
-        np.random.seed(seed)
+    rng = np.random.default_rng(seed)
 
     n_particles = SIMULATION["n_particles"]
     dt = SIMULATION["dt"]
@@ -40,6 +39,7 @@ def run_single_simulation(seed=None):
 
     Klon = DIFFUSION["Klon"]
     Klat = DIFFUSION["Klat"]
+    apply_diffusion = WIND.get("apply_diffusion", _wind_mode != "era5")
 
     lon0 = SOURCE["lon"]
     lat0 = SOURCE["lat"]
@@ -63,8 +63,8 @@ def run_single_simulation(seed=None):
     particles_per_step = max(1, n_particles // emission_steps)
 
     # Position initiale de toutes les particules (source, petite dispersion)
-    traj_lon[0] = lon0 + np.random.normal(0, 0.05, n_particles)
-    traj_lat[0] = lat0 + np.random.normal(0, 0.03, n_particles)
+    traj_lon[0] = lon0 + rng.normal(0, 0.05, n_particles)
+    traj_lat[0] = lat0 + rng.normal(0, 0.03, n_particles)
 
     # Activation progressive
     released = 0
@@ -91,11 +91,16 @@ def run_single_simulation(seed=None):
             traj_lon[step, alive],
             traj_lat[step, alive],
             t_hours,
+            rng=rng,
         )
 
         # Bruit de diffusion
-        noise_lon = np.random.normal(0, sigma_lon, n_alive)
-        noise_lat = np.random.normal(0, sigma_lat, n_alive)
+        if apply_diffusion:
+            noise_lon = rng.normal(0, sigma_lon, n_alive)
+            noise_lat = rng.normal(0, sigma_lat, n_alive)
+        else:
+            noise_lon = 0.0
+            noise_lat = 0.0
 
         # Advection + diffusion
         traj_lon[step + 1, alive] = traj_lon[step, alive] + u * dt + noise_lon

@@ -53,6 +53,8 @@ WIND = {
     "mode": "era5",
     "era5_file": "data/era5_chernobyl_1986.nc",
     "turbulence": 0.25,   # bruit turbulent (fraction du vent local)
+    # Évite la double turbulence en mode ERA5 (bruit vent + diffusion explicite)
+    "apply_diffusion": False,
 }
 
 # ─── Diffusion turbulente (en degrés²/h) ───────────────────────────

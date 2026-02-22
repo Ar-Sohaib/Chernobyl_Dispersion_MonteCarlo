@@ -1,0 +1,8 @@
+numpy
+matplotlib
+cartopy
+scipy
+xarray
+netCDF4
+cdsapi
+pytest
