@@ -7,6 +7,13 @@ import numpy as np
 from config import GRID, SIMULATION
 
 
+def _histogram2d_on_grid(lon, lat, lon_edges, lat_edges):
+    """Projette les points sur la grille en rabattant les dépassements aux bords."""
+    lon_clipped = np.clip(lon, lon_edges[0], lon_edges[-1])
+    lat_clipped = np.clip(lat, lat_edges[0], lat_edges[-1])
+    return np.histogram2d(lon_clipped, lat_clipped, bins=[lon_edges, lat_edges])
+
+
 def make_grid():
     """Crée les bords et centres de la grille géographique."""
     lon_edges = np.linspace(GRID["lon_min"], GRID["lon_max"], GRID["nlon"] + 1)
@@ -35,9 +42,8 @@ def compute_time_density_maps(traj_lon, traj_lat, active):
         alive = active[t]
         if np.sum(alive) == 0:
             continue
-        h, _, _ = np.histogram2d(
-            traj_lon[t, alive], traj_lat[t, alive],
-            bins=[lon_edges, lat_edges]
+        h, _, _ = _histogram2d_on_grid(
+            traj_lon[t, alive], traj_lat[t, alive], lon_edges, lat_edges
         )
         maps[t] = h.T  # (nlat, nlon)
 
@@ -55,7 +61,7 @@ def compute_density_map(traj_lon, traj_lat, active):
     lon_edges, lat_edges, _, _ = make_grid()
     lon_all = traj_lon[active]
     lat_all = traj_lat[active]
-    h, _, _ = np.histogram2d(lon_all, lat_all, bins=[lon_edges, lat_edges])
+    h, _, _ = _histogram2d_on_grid(lon_all, lat_all, lon_edges, lat_edges)
     density = h.T
     if density.max() > 0:
         density = density / density.max()
@@ -77,7 +83,7 @@ def compute_probability_map(all_runs):
     for traj_lon, traj_lat, active in all_runs:
         lon_all = traj_lon[active]
         lat_all = traj_lat[active]
-        h, _, _ = np.histogram2d(lon_all, lat_all, bins=[lon_edges, lat_edges])
+        h, _, _ = _histogram2d_on_grid(lon_all, lat_all, lon_edges, lat_edges)
         visit_count += (h.T > 0).astype(float)
 
     prob_map = visit_count / n_runs
@@ -103,7 +109,7 @@ def compute_mean_concentration(all_runs):
     for traj_lon, traj_lat, active in all_runs:
         lon_all = traj_lon[active]
         lat_all = traj_lat[active]
-        h, _, _ = np.histogram2d(lon_all, lat_all, bins=[lon_edges, lat_edges])
+        h, _, _ = _histogram2d_on_grid(lon_all, lat_all, lon_edges, lat_edges)
         total += h.T
 
     mean_conc = total / n_runs
@@ -131,7 +137,7 @@ def compute_threshold_map(all_runs, threshold=0.05):
     for traj_lon, traj_lat, active in all_runs:
         lon_all = traj_lon[active]
         lat_all = traj_lat[active]
-        h, _, _ = np.histogram2d(lon_all, lat_all, bins=[lon_edges, lat_edges])
+        h, _, _ = _histogram2d_on_grid(lon_all, lat_all, lon_edges, lat_edges)
         density = h.T
         if density.max() > 0:
             density = density / density.max()
@@ -167,9 +173,8 @@ def compute_time_probability_maps(all_runs):
             alive = active[t]
             if np.sum(alive) == 0:
                 continue
-            h, _, _ = np.histogram2d(
-                traj_lon[t, alive], traj_lat[t, alive],
-                bins=[lon_edges, lat_edges]
+            h, _, _ = _histogram2d_on_grid(
+                traj_lon[t, alive], traj_lat[t, alive], lon_edges, lat_edges
             )
             prob_maps[t] += (h.T > 0).astype(np.float32)
 

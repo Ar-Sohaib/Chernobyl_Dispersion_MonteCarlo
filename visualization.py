@@ -56,6 +56,15 @@ def _extent():
             GRID["lat_min"], GRID["lat_max"]]
 
 
+def _filter_points_in_extent(lons, lats):
+    ext = _extent()
+    in_bounds = (
+        (lons >= ext[0]) & (lons <= ext[1]) &
+        (lats >= ext[2]) & (lats <= ext[3])
+    )
+    return lons[in_bounds], lats[in_bounds]
+
+
 def _text_outline():
     return [pe.withStroke(linewidth=_OUTLINE_W, foreground="black")]
 
@@ -327,7 +336,10 @@ def create_single_map(mode, prob_map=None, mean_conc=None,
         # Particules
         alive = active[t_last]
         if np.sum(alive) > 0:
-            ax.scatter(traj_lon[t_last, alive], traj_lat[t_last, alive],
+            lons, lats = _filter_points_in_extent(
+                traj_lon[t_last, alive], traj_lat[t_last, alive]
+            )
+            ax.scatter(lons, lats,
                        s=4, c="#ffcc00", alpha=0.6,
                        transform=data_crs, zorder=6, edgecolors="none")
         cb_label = "Densité instantanée"
@@ -820,9 +832,13 @@ def create_video(traj_lon, traj_lat, active, time_density_maps,
         if n_alive > 0:
             lons = traj_lon[t, alive]
             lats = traj_lat[t, alive]
-            scatter.set_offsets(
-                proj.transform_points(data_crs, lons, lats)[:, :2]
-            )
+            lons, lats = _filter_points_in_extent(lons, lats)
+            if lons.size > 0:
+                scatter.set_offsets(
+                    proj.transform_points(data_crs, lons, lats)[:, :2]
+                )
+            else:
+                scatter.set_offsets(np.empty((0, 2)))
         else:
             scatter.set_offsets(np.empty((0, 2)))
 
