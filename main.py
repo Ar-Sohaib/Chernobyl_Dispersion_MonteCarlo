@@ -5,9 +5,10 @@ Vidéo MP4 avec 4 panneaux sur fond satellite.
 """
 import time
 import argparse
+import os
 import numpy as np
 
-from config import SIMULATION, VISUALIZATION
+from config import SIMULATION, VISUALIZATION, GRID, WIND
 from engine import run_monte_carlo
 from aggregation import (
     make_grid,
@@ -19,6 +20,7 @@ from aggregation import (
     compute_time_probability_maps,
 )
 from visualization import create_video, create_single_map, create_proba_video
+from visualization_globe import create_globe_map, create_globe_video
 
 
 THRESHOLD = 0.05  # Seuil de concentration pour la carte de dépassement
@@ -41,6 +43,9 @@ _MODE_ALIASES = {
     "cloud":       "instant",
     "threshold":   "threshold",
     "seuil":       "threshold",
+    "globe":       "globe",
+    "globe_video": "globe_video",
+    "gv":          "globe_video",
 }
 
 
@@ -85,6 +90,18 @@ def _parse_args():
         help=(
             "Nombre de particules à simuler (par défaut : 8000).\n"
             "  Exemples : 1000, 5000, 10000, 50000"
+        ),
+    )
+    parser.add_argument(
+        "--globe", "-g",
+        action="store_true",
+        default=False,
+        help=(
+            "Active la projection spherique (globe orthographique).\n"
+            "  Compatible avec tous les modes de rendu.\n"
+            "  Le globe est centre sur l'Europe / Tchernobyl.\n"
+            "  Fond Blue Marble au lieu de l'image hypsometrique.\n"
+            "  Note : le rendu globe est plus lent que le rendu plat."
         ),
     )
     return parser.parse_args()
@@ -159,6 +176,26 @@ def main():
     else:
         render_mode = VISUALIZATION.get("render_mode", "probability")
 
+    # Globe : --globe flag ou mode explicite globe/globe_video
+    is_globe = args.globe or render_mode in ("globe", "globe_video")
+
+    # Globe : grille élargie pour couvrir l'hémisphère visible
+    if is_globe:
+        GRID["lon_min"] = -180.0
+        GRID["lon_max"] =  180.0
+        GRID["lat_min"] =  -90.0
+        GRID["lat_max"] =   90.0
+        GRID["nlon"]    =  720
+        GRID["nlat"]    =  360
+
+        if WIND.get("mode") == "era5":
+            global_era5 = "data/era5_chernobyl_1986_global.nc"
+            if os.path.isfile(global_era5):
+                WIND["era5_file"] = global_era5
+                print(f"  [INFO] ERA5 global detecte: {global_era5}")
+            else:
+                print("  [INFO] ERA5 global absent ; fallback ERA5 regional (Europe).")
+
     print("=" * 65)
     print("  SIMULATION MONTE CARLO -- TCHERNOBYL 1986")
     print("=" * 65)
@@ -167,6 +204,7 @@ def main():
     print(f"  Runs MC      : {SIMULATION['n_runs']}")
     print(f"  Pas de temps : {SIMULATION['dt']} h")
     print(f"  Mode rendu   : {render_mode}")
+    print(f"  Projection   : {'Globe (orthographique)' if is_globe else 'Plate (PlateCarree)'}")
     print(f"  Résolution   : {res_w}×{res_h}")
     print("-" * 65)
 
@@ -195,7 +233,43 @@ def main():
     print(f"  [OK] Depassement de seuil (C > {THRESHOLD}) calcule")
 
     # ── 3. Génération sortie ──────────────────────────────────────────
-    if render_mode == "all":
+    if is_globe:
+        # ── Globe : projection orthographique sphérique ───────────────
+        if render_mode in ("proba_video", "globe_video"):
+            print("\n[3/3] Calcul probabilité temporelle (tous runs x tous pas)...")
+            time_prob_maps = compute_time_probability_maps(all_runs)
+            print("\n[3/3] Génération vidéo globe...")
+            output_path = create_globe_video(time_prob_maps)
+        elif render_mode == "all":
+            # 4 panneaux non supporté en globe → fallback probabilité
+            print("\n[3/3] Génération image globe (mode probabilité)...")
+            output_path = create_globe_map(
+                mode="probability",
+                prob_map=prob_map,
+                mean_conc=mean_conc,
+                threshold_map=threshold_map,
+                threshold=THRESHOLD,
+                traj_lon=traj_lon,
+                traj_lat=traj_lat,
+                active=active,
+                time_density_maps=time_maps,
+            )
+        else:
+            # Modes statiques : probability, cumulative, instant, threshold, globe
+            actual_mode = render_mode if render_mode != "globe" else "probability"
+            print(f"\n[3/3] Génération image globe — mode '{actual_mode}'...")
+            output_path = create_globe_map(
+                mode=actual_mode,
+                prob_map=prob_map,
+                mean_conc=mean_conc,
+                threshold_map=threshold_map,
+                threshold=THRESHOLD,
+                traj_lon=traj_lon,
+                traj_lat=traj_lat,
+                active=active,
+                time_density_maps=time_maps,
+            )
+    elif render_mode == "all":
         print("\n[3/3] Génération de la vidéo MP4 (4 panneaux)...")
         output_path = create_video(
             traj_lon, traj_lat, active,

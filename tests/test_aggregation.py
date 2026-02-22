@@ -27,3 +27,20 @@ def test_compute_density_map_normalized():
     active = np.array([[True, True], [True, True]])
     density = aggregation.compute_density_map(traj_lon, traj_lat, active)
     assert density.max() == 1.0
+
+
+def test_compute_density_map_clips_out_of_bounds_particles(monkeypatch):
+    monkeypatch.setitem(aggregation.GRID, "lon_min", 0.0)
+    monkeypatch.setitem(aggregation.GRID, "lon_max", 1.0)
+    monkeypatch.setitem(aggregation.GRID, "lat_min", 0.0)
+    monkeypatch.setitem(aggregation.GRID, "lat_max", 1.0)
+    monkeypatch.setitem(aggregation.GRID, "nlon", 2)
+    monkeypatch.setitem(aggregation.GRID, "nlat", 2)
+
+    traj_lon = np.array([[-0.1, 1.1]])
+    traj_lat = np.array([[-0.1, 1.1]])
+    active = np.array([[True, True]])
+
+    density = aggregation.compute_density_map(traj_lon, traj_lat, active)
+    assert density[0, 0] == 1.0
+    assert density[1, 1] == 1.0

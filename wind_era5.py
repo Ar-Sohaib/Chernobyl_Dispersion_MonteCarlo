@@ -27,6 +27,17 @@ _interp_cache = {}
 _ACCIDENT_UTC = np.datetime64("1986-04-26T01:00:00")
 
 
+def _map_lons_to_era_domain(lons, era_lons):
+    """Projette les longitudes de simulation dans la convention ERA5."""
+    lons = np.asarray(lons, dtype=np.float64)
+    # ERA5 peut être en [0, 360] ou [-180, 180]
+    if era_lons.min() >= 0.0 and np.any(lons < 0.0):
+        return np.mod(lons, 360.0)
+    if era_lons.min() < 0.0 and np.any(lons > 180.0):
+        return ((lons + 180.0) % 360.0) - 180.0
+    return lons
+
+
 def _load(era5_path):
     """Charge le NetCDF ERA5 en mémoire (une seule fois)."""
     global _era5
@@ -83,8 +94,9 @@ def _load(era5_path):
 
     ds.close()
 
-    if (lats.min() > GRID["lat_min"] or lats.max() < GRID["lat_max"] or
-            lons.min() > GRID["lon_min"] or lons.max() < GRID["lon_max"]):
+    eps = 0.3  # marge demi-cellule ERA5 (~0.25°)
+    if (lats.min() > GRID["lat_min"] + eps or lats.max() < GRID["lat_max"] - eps or
+            lons.min() > GRID["lon_min"] + eps or lons.max() < GRID["lon_max"] - eps):
         warnings.warn(
             "Le domaine ERA5 est plus petit que la grille de simulation ; "
             "certaines particules pourront être hors domaine.",
@@ -144,17 +156,13 @@ def get_wind(lons, lats, t_hours, era5_path="data/era5_chernobyl_1986.nc",
     data = _load(era5_path)
     t_arr = data["t_hours"]
     n = len(lons)
-    outside_domain = (
-        (lats < data["lats"].min()) | (lats > data["lats"].max()) |
-        (lons < data["lons"].min()) | (lons > data["lons"].max())
-    )
-    if np.any(outside_domain):
-        warnings.warn(
-            f"{int(np.sum(outside_domain))} particule(s) hors domaine ERA5 ; "
-            "fill_value=0 appliqué.",
-            RuntimeWarning,
-            stacklevel=2,
-        )
+
+    # Normalisation de longitude selon la convention du fichier ERA5
+    lons_era = _map_lons_to_era_domain(lons, data["lons"])
+
+    # Hors-domaine : on rabat aux bords ERA5 (évite vent nul non-physique)
+    lons_era = np.clip(lons_era, data["lons"].min(), data["lons"].max())
+    lats = np.clip(lats, data["lats"].min(), data["lats"].max())
 
     # ── Interpolation temporelle ──────────────────────────────────────
     # Trouver les deux pas de temps encadrants
@@ -166,7 +174,7 @@ def get_wind(lons, lats, t_hours, era5_path="data/era5_chernobyl_1986.nc",
     alpha = np.clip((t_hours - t0) / dt, 0.0, 1.0)
 
     # ── Interpolation spatiale aux deux instants ──────────────────────
-    points = np.column_stack([lats, lons])  # (n, 2) — [lat, lon]
+    points = np.column_stack([lats, lons_era])  # (n, 2) — [lat, lon]
 
     u0 = _interpolator(idx, "u")(points)
     u1 = _interpolator(idx + 1, "u")(points)
