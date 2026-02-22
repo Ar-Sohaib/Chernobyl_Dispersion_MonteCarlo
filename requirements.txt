@@ -1,8 +1,8 @@
-numpy
-matplotlib
-cartopy
-scipy
-xarray
-netCDF4
-cdsapi
-pytest
+numpy>=1.26,<3
+matplotlib>=3.8,<4
+cartopy>=0.22,<1
+scipy>=1.11,<2
+xarray>=2024.1.0
+netCDF4>=1.6,<2
+cdsapi>=0.7,<1
+pytest>=8,<10

@@ -39,7 +39,7 @@ def run_single_simulation(seed=None):
 
     Klon = DIFFUSION["Klon"]
     Klat = DIFFUSION["Klat"]
-    apply_diffusion = WIND.get("apply_diffusion", _wind_mode != "era5")
+    apply_diffusion = WIND.get("apply_diffusion", True)
 
     lon0 = SOURCE["lon"]
     lat0 = SOURCE["lat"]

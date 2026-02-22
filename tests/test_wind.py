@@ -5,7 +5,7 @@ import wind_era5
 
 
 def test_ms_to_deg_per_hour_conversion(monkeypatch):
-    monkeypatch.setattr(wind_era5, "_load", lambda _: {"t_hours": np.array([0.0, 1.0]), "lats": np.array([40.0, 60.0]), "lons": np.array([0.0, 2.0])})
+    monkeypatch.setattr(wind_era5, "_load", lambda _: {"t_hours": np.array([0.0, 1.0]), "lats": np.array([40.0, 60.0]), "lons": np.array([0.0, 2.0]), "u": None, "v": None})
     monkeypatch.setattr(wind_era5, "_interpolator", lambda t_idx, component: (lambda pts: np.full(pts.shape[0], 10.0 if component == "u" else 0.0)))
     u, v = wind_era5.get_wind(np.array([1.0]), np.array([50.0]), t_hours=0.0, turbulence=0.0)
     expected_u = 10.0 * 3600.0 / (111_000.0 * np.cos(np.radians(50.0)))
@@ -14,7 +14,7 @@ def test_ms_to_deg_per_hour_conversion(monkeypatch):
 
 
 def test_temporal_interpolation_alpha_edges(monkeypatch):
-    monkeypatch.setattr(wind_era5, "_load", lambda _: {"t_hours": np.array([0.0, 1.0]), "lats": np.array([40.0, 60.0]), "lons": np.array([0.0, 2.0])})
+    monkeypatch.setattr(wind_era5, "_load", lambda _: {"t_hours": np.array([0.0, 1.0]), "lats": np.array([40.0, 60.0]), "lons": np.array([0.0, 2.0]), "u": None, "v": None})
 
     def fake_interpolator(t_idx, component):
         value = 2.0 if t_idx == 0 else 6.0

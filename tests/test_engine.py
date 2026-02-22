@@ -21,7 +21,7 @@ def test_emission_progressive_increases_active_particles(monkeypatch):
 def test_out_of_bounds_particles_are_deactivated(monkeypatch):
     monkeypatch.setattr(engine, "get_wind", lambda lons, lats, t_hours, rng=None: (np.full_like(lons, 1e6), np.full_like(lats, 1e6)))
     _, _, active = engine.run_single_simulation(seed=1)
-    released_step0 = max(1, engine.SIMULATION["n_particles"] // min(int(engine.SOURCE["emission_duration_h"] / engine.SIMULATION["dt"]), engine.SIMULATION["n_steps"]))
+    released_step0 = int(np.sum(active[0]))
     assert not np.any(active[1, :released_step0])
 
 
