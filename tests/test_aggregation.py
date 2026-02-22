@@ -38,7 +38,7 @@ def test_compute_density_map_clips_out_of_bounds_particles(monkeypatch):
     monkeypatch.setitem(aggregation.GRID, "nlat", 2)
 
     traj_lon = np.array([[-0.1, 1.1]])
-    traj_lat = np.array([[0.1, 0.9]])
+    traj_lat = np.array([[-0.1, 1.1]])
     active = np.array([[True, True]])
 
     density = aggregation.compute_density_map(traj_lon, traj_lat, active)
