@@ -8,8 +8,13 @@ from config import GRID, SIMULATION
 
 
 def _histogram2d_on_grid(lon, lat, lon_edges, lat_edges):
-    """Projette les points sur la grille en rabattant les dépassements aux bords."""
-    lon_clipped = np.clip(lon, lon_edges[0], lon_edges[-1])
+    """Projette les points sur la grille (avec périodicité globale en longitude)."""
+    lon_span = lon_edges[-1] - lon_edges[0]
+    if np.isclose(lon_span, 360.0, atol=1e-6):
+        # Domaine global : longitude périodique (dateline-safe)
+        lon_clipped = ((lon - lon_edges[0]) % lon_span) + lon_edges[0]
+    else:
+        lon_clipped = np.clip(lon, lon_edges[0], lon_edges[-1])
     lat_clipped = np.clip(lat, lat_edges[0], lat_edges[-1])
     return np.histogram2d(lon_clipped, lat_clipped, bins=[lon_edges, lat_edges])
 

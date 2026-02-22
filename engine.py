@@ -21,6 +21,18 @@ else:
     print(f"  Vent : modele simplifie (phases historiques)")
 
 
+def _is_global_lon_grid():
+    """Retourne True si la grille longitude couvre le globe complet."""
+    span = GRID["lon_max"] - GRID["lon_min"]
+    return GRID["lon_min"] <= -180.0 and GRID["lon_max"] >= 180.0 and span >= 359.0
+
+
+def _wrap_lon_to_grid(lon):
+    """Rabats les longitudes dans l'intervalle [lon_min, lon_max)."""
+    span = GRID["lon_max"] - GRID["lon_min"]
+    return ((lon - GRID["lon_min"]) % span) + GRID["lon_min"]
+
+
 def run_single_simulation(seed=None):
     """
     Exécute une simulation Monte Carlo complète.
@@ -60,7 +72,9 @@ def run_single_simulation(seed=None):
     else:
         emission_steps = 1  # Tout d'un coup
 
-    particles_per_step = max(1, n_particles // emission_steps)
+    # Répartition exacte des émissions (évite de "perdre" des particules)
+    release_schedule = np.full(emission_steps, n_particles // emission_steps, dtype=int)
+    release_schedule[: n_particles % emission_steps] += 1
 
     # Position initiale de toutes les particules (source, petite dispersion)
     traj_lon[0] = lon0 + rng.normal(0, 0.05, n_particles)
@@ -73,7 +87,7 @@ def run_single_simulation(seed=None):
 
         # Libérer de nouvelles particules
         if step < emission_steps:
-            new_end = min(released + particles_per_step, n_particles)
+            new_end = min(released + int(release_schedule[step]), n_particles)
             active[step, released:new_end] = True
             released = new_end
 
@@ -87,12 +101,22 @@ def run_single_simulation(seed=None):
             continue
 
         # Récupérer le vent pour cet instant (ERA5 ou simplifié)
-        u, v = get_wind(
-            traj_lon[step, alive],
-            traj_lat[step, alive],
-            t_hours,
-            rng=rng,
-        )
+        if _wind_mode == "era5":
+            u, v = get_wind(
+                traj_lon[step, alive],
+                traj_lat[step, alive],
+                t_hours,
+                era5_path=WIND.get("era5_file", "data/era5_chernobyl_1986.nc"),
+                turbulence=WIND.get("turbulence", 0.25),
+                rng=rng,
+            )
+        else:
+            u, v = get_wind(
+                traj_lon[step, alive],
+                traj_lat[step, alive],
+                t_hours,
+                rng=rng,
+            )
 
         # Bruit de diffusion
         if apply_diffusion:
@@ -106,18 +130,32 @@ def run_single_simulation(seed=None):
         traj_lon[step + 1, alive] = traj_lon[step, alive] + u * dt + noise_lon
         traj_lat[step + 1, alive] = traj_lat[step, alive] + v * dt + noise_lat
 
+        # Domaine global : longitude périodique
+        if _is_global_lon_grid():
+            traj_lon[step + 1, alive] = _wrap_lon_to_grid(traj_lon[step + 1, alive])
+            # Evite les singularités numériques aux pôles exacts
+            traj_lat[step + 1, alive] = np.clip(
+                traj_lat[step + 1, alive],
+                GRID["lat_min"] + 1e-6,
+                GRID["lat_max"] - 1e-6,
+            )
+
         # Particules inactives
         traj_lon[step + 1, ~alive] = traj_lon[step, ~alive]
         traj_lat[step + 1, ~alive] = traj_lat[step, ~alive]
 
-        # Désactiver les particules hors du domaine géographique
-        out_of_bounds = (
-            (traj_lon[step + 1] < GRID["lon_min"]) |
-            (traj_lon[step + 1] > GRID["lon_max"]) |
-            (traj_lat[step + 1] < GRID["lat_min"]) |
-            (traj_lat[step + 1] > GRID["lat_max"])
-        )
-        active[step + 1] = alive.copy() & ~out_of_bounds
+        # Domaine global : pas de "mort" par frontière cartographique
+        if _is_global_lon_grid() and GRID["lat_min"] <= -90.0 and GRID["lat_max"] >= 90.0:
+            active[step + 1] = alive.copy()
+        else:
+            # Domaine régional : désactiver hors emprise
+            out_of_bounds = (
+                (traj_lon[step + 1] < GRID["lon_min"]) |
+                (traj_lon[step + 1] > GRID["lon_max"]) |
+                (traj_lat[step + 1] < GRID["lat_min"]) |
+                (traj_lat[step + 1] > GRID["lat_max"])
+            )
+            active[step + 1] = alive.copy() & ~out_of_bounds
 
     return traj_lon, traj_lat, active
 

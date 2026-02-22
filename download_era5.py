@@ -30,10 +30,12 @@ import xarray as xr
 
 OUTPUT_DIR = "data"
 FINAL_FILE = os.path.join(OUTPUT_DIR, "era5_chernobyl_1986.nc")
+FINAL_FILE_GLOBAL = os.path.join(OUTPUT_DIR, "era5_chernobyl_1986_global.nc")
 
 # Zone géographique — doit couvrir GRID dans config.py
 # Format : [North, West, South, East]
 AREA = [72, -12, 33, 75]
+AREA_GLOBAL = [90, -180, -90, 180]
 
 # Toutes les heures de la journée
 HOURS = [f"{h:02d}:00" for h in range(24)]
@@ -62,12 +64,17 @@ def download():
     """Télécharge et fusionne les données ERA5 pour Tchernobyl."""
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
+    # Export ERA5_GLOBAL=1 pour forcer un champ global
+    use_global = os.environ.get("ERA5_GLOBAL", "0") == "1"
+    area = AREA_GLOBAL if use_global else AREA
+    final_file = FINAL_FILE_GLOBAL if use_global else FINAL_FILE
+
     # Déjà téléchargé ?
-    if os.path.isfile(FINAL_FILE):
-        size_mb = os.path.getsize(FINAL_FILE) / (1024 * 1024)
-        print(f"  [OK] Donnees deja presentes : {FINAL_FILE} ({size_mb:.0f} Mo)")
+    if os.path.isfile(final_file):
+        size_mb = os.path.getsize(final_file) / (1024 * 1024)
+        print(f"  [OK] Donnees deja presentes : {final_file} ({size_mb:.0f} Mo)")
         print("    (Supprimer le fichier pour re-télécharger)")
-        return FINAL_FILE
+        return final_file
 
     _check_cdsapirc()
 
@@ -78,7 +85,7 @@ def download():
     f_apr = os.path.join(OUTPUT_DIR, "_era5_apr_1986.nc")
     print("\n  [DL] ERA5 -- Avril 1986 (jours 26-30) -- 850 hPa...")
     print("     Variables : u, v (vent)")
-    print(f"     Zone : {AREA}")
+    print(f"     Zone : {area}")
     print("     Résolution : 0.25° × 0.25°, horaire")
     print("     Telechargement en cours (peut prendre 5-15 min)...\n")
 
@@ -96,7 +103,7 @@ def download():
             "day": ["26", "27", "28", "29", "30"],
             "time": HOURS,
             "data_format": "netcdf",
-            "area": AREA,
+            "area": area,
         },
         f_apr,
     )
@@ -122,7 +129,7 @@ def download():
             "day": [f"{d:02d}" for d in range(1, 17)],
             "time": HOURS,
             "data_format": "netcdf",
-            "area": AREA,
+            "area": area,
         },
         f_may,
     )
@@ -166,7 +173,7 @@ def download():
     ds = ds.sortby("time")
 
     # Sauvegarder
-    ds.to_netcdf(FINAL_FILE)
+    ds.to_netcdf(final_file)
     ds.close()
 
     # Nettoyage fichiers temporaires
@@ -174,12 +181,12 @@ def download():
         if os.path.isfile(f):
             os.remove(f)
 
-    size_mb = os.path.getsize(FINAL_FILE) / (1024 * 1024)
-    print(f"\n  [OK] ERA5 pret : {FINAL_FILE} ({size_mb:.0f} Mo)")
+    size_mb = os.path.getsize(final_file) / (1024 * 1024)
+    print(f"\n  [OK] ERA5 pret : {final_file} ({size_mb:.0f} Mo)")
     print(f"     Période : 26 avril — 16 mai 1986")
     print(f"     Variables : u, v à 850 hPa (horaire)")
-    print(f"     Zone : {AREA[1]}°W — {AREA[3]}°E, {AREA[2]}°N — {AREA[0]}°N")
-    return FINAL_FILE
+    print(f"     Zone : {area[1]}°W — {area[3]}°E, {area[2]}°N — {area[0]}°N")
+    return final_file
 
 
 if __name__ == "__main__":
