@@ -93,6 +93,16 @@ def _parse_args():
         ),
     )
     parser.add_argument(
+        "--runs", "-N",
+        type=int,
+        default=None,
+        metavar="RUNS",
+        help=(
+            "Nombre de répétitions Monte Carlo (par défaut : 12).\n"
+            "  Exemples : 4, 8, 12, 20"
+        ),
+    )
+    parser.add_argument(
         "--globe", "-g",
         action="store_true",
         default=False,
@@ -163,6 +173,12 @@ def main():
         if args.particles < 100:
             raise SystemExit("ERREUR: Minimum 100 particules.")
         SIMULATION["n_particles"] = args.particles
+
+    # ── Nombre de runs Monte Carlo : CLI > config.py ─────────────────
+    if args.runs is not None:
+        if args.runs < 1:
+            raise SystemExit("ERREUR: Minimum 1 run Monte Carlo.")
+        SIMULATION["n_runs"] = args.runs
 
     # Priorité : CLI > config.py > défaut
     if args.mode is not None:
