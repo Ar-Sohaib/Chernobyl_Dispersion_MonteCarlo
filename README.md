@@ -252,6 +252,9 @@ Les fichiers sont sauvegardés dans `output/` :
 | `probability_map.png` | Carte statique de probabilité |
 | `chernobyl_proba_video.mp4` | Heatmap de probabilité animée |
 | `chernobyl_simulation.mp4` | Vidéo 4 panneaux animée |
+| `chernobyl_globe_video.mp4` | Exemple vidéo globe orthographique animée |
+
+Exemple direct : [Voir `chernobyl_globe_video.mp4`](output/chernobyl_globe_video.mp4)
 
 ---
 
