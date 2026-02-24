@@ -267,7 +267,7 @@ Tous les paramètres sont centralisés dans `config.py` :
 | `DIFFUSION` | Coefficients $K_{\text{lon}}$, $K_{\text{lat}}$ en deg²/h |
 | `GRID` | Emprise géographique et résolution de la grille |
 | `SIMULATION` | Nombre de particules, $\Delta t$, $T_{\text{steps}}$, $M$ runs, graine |
-| `VISUALIZATION` | DPI, résolution, colormaps, durée vidéo, bitrate |
+| `VISUALIZATION` | `resolution` (px) + `dpi` (source de vérité), colormaps, durée vidéo, bitrate, `scale_bar_km` |
 
 ---
 

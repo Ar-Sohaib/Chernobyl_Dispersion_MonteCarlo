@@ -84,8 +84,13 @@ SIMULATION = {
 
 # ─── Visualisation ──────────────────────────────────────────────────
 VISUALIZATION = {
+    # Source de vérité résolution/rendu:
+    #   taille finale (px) = resolution
+    #   figsize = (resolution[0] / dpi, resolution[1] / dpi)
+    "resolution": (2560, 1440),   # 2K QHD par défaut (CLI peut surcharger)
     "dpi": 120,
-    "figsize": (21.34, 12),    # 21.34×12 inches × 120 dpi = 2560×1440 (2K QHD)
+    # Compat legacy (mis à jour dynamiquement par visualization.py)
+    "figsize": (2560 / 120, 1440 / 120),
     "cmap_cloud": "YlOrRd",
     "cmap_cumulative": "inferno",
     "save_dir": "output",
@@ -93,6 +98,7 @@ VISUALIZATION = {
     "video_duration_s": 20,   # Durée cible de la vidéo (~20 sec)
     "video_bitrate": 30000,   # 30 Mbps pour qualité 4K
     "bg_image": "assets/europe_hypsometric.jpg",  # Fond de carte raster
+    "scale_bar_km": 500,
 
     # Mode de rendu :
     #   "all"         → vidéo 4 panneaux (par défaut)

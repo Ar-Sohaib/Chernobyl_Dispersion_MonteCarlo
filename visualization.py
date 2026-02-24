@@ -18,29 +18,110 @@ import matplotlib.colors as mcolors
 import matplotlib.patheffects as pe
 import matplotlib.gridspec as gridspec
 from matplotlib.animation import FuncAnimation, FFMpegWriter
+from matplotlib.font_manager import FontProperties
+from matplotlib.lines import Line2D
+from mpl_toolkits.axes_grid1.anchored_artists import AnchoredSizeBar
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 from config import GRID, VISUALIZATION, SOURCE, SIMULATION
 
 
 # ═══════════════════════════════════════════════════════════════════════
-#  Constantes style — adaptées 4K
+#  Style responsive (basé résolution)
 # ═══════════════════════════════════════════════════════════════════════
 
-_FONT_TITLE   = 22      # Titre de panneau
-_FONT_SUPTITLE = 28     # Titre global
-_FONT_BAR     = 20      # Barre de temps
-_FONT_CITY    = 13      # Noms de villes
-_FONT_CITY_BIG = 15     # Villes principales
-_FONT_CB      = 14      # Labels colorbar
-_FONT_CB_TICK = 11      # Ticks colorbar
-_FONT_INFO    = 15      # Texte info overlay
-_MARKER_SOURCE = 22     # Étoile source
-_MARKER_CITY   = 4.5    # Point ville
-_OUTLINE_W     = 3.5    # Épaisseur contour texte
-_SCATTER_SIZE  = 2.5    # Taille particules scatter
-_COAST_LW      = 0.9    # Épaisseur côtes
-_BORDER_LW     = 0.6    # Épaisseur frontières
+
+def _clamp(value, vmin, vmax):
+    return max(vmin, min(vmax, value))
+
+
+def _scale(base, s, vmin=None, vmax=None):
+    v = base * s
+    if vmin is not None:
+        v = max(v, vmin)
+    if vmax is not None:
+        v = min(v, vmax)
+    return v
+
+
+def _get_resolution_and_figsize():
+    """
+    Source de vérité: resolution(px) + dpi.
+    Compat: si `resolution` absent, infère depuis `figsize`.
+    """
+    dpi = int(VISUALIZATION.get("dpi", 120))
+
+    if "resolution" in VISUALIZATION:
+        w, h = VISUALIZATION["resolution"]
+    else:
+        fw, fh = VISUALIZATION.get("figsize", (32.0, 18.0))
+        w, h = int(round(fw * dpi)), int(round(fh * dpi))
+
+    w = int(w)
+    h = int(h)
+    if w % 2 != 0:
+        w += 1
+    if h % 2 != 0:
+        h += 1
+
+    figsize = (w / dpi, h / dpi)
+    VISUALIZATION["resolution"] = (w, h)
+    VISUALIZATION["figsize"] = figsize
+    return (w, h), dpi, figsize
+
+
+def _compute_style_scale(resolution, baseline=(3840, 2160)):
+    """Facteur de style S (responsive) basé sur min(scale_w, scale_h)."""
+    w, h = resolution
+    bw, bh = baseline
+    s = min(w / bw, h / bh)
+    return _clamp(s, 0.65, 1.8)
+
+
+# Variables style globales (mises à jour par _apply_responsive_style)
+_FONT_TITLE = 22
+_FONT_SUPTITLE = 28
+_FONT_BAR = 20
+_FONT_CITY = 13
+_FONT_CITY_BIG = 15
+_FONT_CB = 14
+_FONT_CB_TICK = 11
+_FONT_INFO = 15
+_MARKER_SOURCE = 22
+_MARKER_CITY = 4.5
+_OUTLINE_W = 3.5
+_SCATTER_SIZE = 2.5
+_COAST_LW = 0.9
+_BORDER_LW = 0.6
+_STYLE_SCALE = 1.0
+
+
+def _apply_responsive_style(resolution):
+    """Applique toutes les tailles graphiques à partir du facteur S."""
+    global _STYLE_SCALE
+    global _FONT_TITLE, _FONT_SUPTITLE, _FONT_BAR, _FONT_CITY, _FONT_CITY_BIG
+    global _FONT_CB, _FONT_CB_TICK, _FONT_INFO
+    global _MARKER_SOURCE, _MARKER_CITY, _OUTLINE_W, _SCATTER_SIZE
+    global _COAST_LW, _BORDER_LW
+
+    s = _compute_style_scale(resolution)
+    _STYLE_SCALE = s
+
+    _FONT_TITLE = _scale(22, s, 14, 40)
+    _FONT_SUPTITLE = _scale(28, s, 18, 52)
+    _FONT_BAR = _scale(20, s, 13, 38)
+    _FONT_CITY = _scale(13, s, 9, 24)
+    _FONT_CITY_BIG = _scale(15, s, 10, 28)
+    _FONT_CB = _scale(14, s, 10, 24)
+    _FONT_CB_TICK = _scale(11, s, 8, 20)
+    _FONT_INFO = _scale(15, s, 10, 28)
+
+    _MARKER_SOURCE = _scale(22, s, 13, 45)
+    _MARKER_CITY = _scale(4.5, s, 2.5, 9)
+    _OUTLINE_W = _scale(3.5, s, 1.5, 7)
+    _SCATTER_SIZE = _scale(2.5, s, 1.2, 8)
+    _COAST_LW = _scale(0.9, s, 0.45, 1.8)
+    _BORDER_LW = _scale(0.6, s, 0.35, 1.4)
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -69,7 +150,79 @@ def _text_outline():
     return [pe.withStroke(linewidth=_OUTLINE_W, foreground="black")]
 
 
-def _setup_map_ax(ax, data_crs, add_cities=True, title=None):
+def _add_panel_legend(ax):
+    """Legend custom stable (ax1) avec fond semi-transparent."""
+    handles = [
+        Line2D(
+            [0], [0],
+            marker="*", linestyle="None",
+            markerfacecolor="#ff0000", markeredgecolor="#ffff00",
+            markeredgewidth=_scale(1.0, _STYLE_SCALE, 0.6, 2.0),
+            markersize=_scale(12, _STYLE_SCALE, 8, 20),
+            label="Source",
+        ),
+        Line2D(
+            [0], [0],
+            marker="o", linestyle="None",
+            markerfacecolor="#dddddd", markeredgecolor="#dddddd",
+            markersize=_scale(5.0, _STYLE_SCALE, 3, 9),
+            label="Villes",
+        ),
+        Line2D(
+            [0], [0],
+            marker="o", linestyle="None",
+            markerfacecolor="#ffcc00", markeredgecolor="#ffcc00",
+            alpha=0.8,
+            markersize=_scale(4.0, _STYLE_SCALE, 2.5, 8),
+            label="Particules",
+        ),
+    ]
+
+    leg = ax.legend(
+        handles=handles,
+        loc="lower left",
+        bbox_to_anchor=(0.015, 0.02),
+        frameon=True,
+        fontsize=_FONT_CB_TICK,
+        borderpad=_scale(0.45, _STYLE_SCALE, 0.25, 0.9),
+        handletextpad=_scale(0.55, _STYLE_SCALE, 0.35, 1.0),
+        labelspacing=_scale(0.30, _STYLE_SCALE, 0.2, 0.7),
+    )
+    frame = leg.get_frame()
+    frame.set_facecolor((0, 0, 0, 0.62))
+    frame.set_edgecolor("#777777")
+    frame.set_linewidth(_scale(0.9, _STYLE_SCALE, 0.6, 1.6))
+    for txt in leg.get_texts():
+        txt.set_color("#f2f2f2")
+    leg.set_zorder(30)
+
+
+def _add_scale_bar(ax):
+    """Scale bar (Lambert en mètres, via transData)."""
+    length_km = float(VISUALIZATION.get("scale_bar_km", 500))
+    font_props = FontProperties(size=_FONT_CB_TICK)
+
+    scalebar = AnchoredSizeBar(
+        ax.transData,
+        length_km * 1000.0,
+        f"{int(length_km)} km",
+        loc="lower right",
+        pad=_scale(0.35, _STYLE_SCALE, 0.2, 0.75),
+        borderpad=_scale(0.55, _STYLE_SCALE, 0.35, 1.0),
+        sep=_scale(4.0, _STYLE_SCALE, 2.0, 8.0),
+        frameon=True,
+        size_vertical=_scale(3.0, _STYLE_SCALE, 1.2, 6.0),
+        color="white",
+        fontproperties=font_props,
+    )
+    scalebar.patch.set_facecolor((0, 0, 0, 0.62))
+    scalebar.patch.set_edgecolor("#777777")
+    scalebar.patch.set_linewidth(_scale(0.9, _STYLE_SCALE, 0.6, 1.6))
+    ax.add_artist(scalebar)
+
+
+def _setup_map_ax(ax, data_crs, add_cities=True, title=None,
+                  add_legend=False, add_scalebar=False):
     """
     Fond de carte raster haute résolution + features 50m.
     """
@@ -106,12 +259,18 @@ def _setup_map_ax(ax, data_crs, add_cities=True, title=None):
 
     if title:
         ax.set_title(title, color="white", fontsize=_FONT_TITLE,
-                     fontweight="bold", pad=14)
+                     fontweight="bold", pad=_scale(14, _STYLE_SCALE, 8, 22))
 
     # Cadre subtil
     for sp in ax.spines.values():
         sp.set_edgecolor("#444444")
-        sp.set_linewidth(1.2)
+        sp.set_linewidth(_scale(1.2, _STYLE_SCALE, 0.8, 2.4))
+
+    if add_legend:
+        _add_panel_legend(ax)
+    if add_scalebar:
+        # Appel après set_extent pour cohérence des transformations
+        _add_scale_bar(ax)
 
 
 def _add_cities(ax, transform):
@@ -180,6 +339,8 @@ def create_single_map(mode, prob_map=None, mean_conc=None,
     En mode 'probability', la carte est agrandie pour voir les détails.
     """
     _setup_output_dir()
+    resolution, dpi, figsize = _get_resolution_and_figsize()
+    _apply_responsive_style(resolution)
 
     proj = ccrs.LambertConformal(
         central_longitude=30.0, central_latitude=52.0,
@@ -188,28 +349,23 @@ def create_single_map(mode, prob_map=None, mean_conc=None,
     data_crs = ccrs.PlateCarree()
     data_ext = _extent()
 
-    # Tailles adaptées single map (fontes plus grandes)
-    font_title = 36
-    font_cb = 22
-    font_cb_tick = 16
-    font_city = 18
-    font_city_big = 22
-    marker_source = 30
-    marker_city = 7
-    outline_w = 5
-    font_info = 22
+    # Tailles single-map : légèrement augmentées mais toujours dérivées de S
+    font_title = _scale(_FONT_TITLE, 1.12)
+    font_cb = _scale(_FONT_CB, 1.10)
+    font_cb_tick = _scale(_FONT_CB_TICK, 1.10)
 
     fig = plt.figure(
-        figsize=VISUALIZATION["figsize"],
+        figsize=figsize,
         facecolor="#08080f",
-        dpi=VISUALIZATION["dpi"],
+        dpi=dpi,
     )
 
-    # Layout plein écran : carte + colorbar
-    margin = 0.04
-    cb_w = 0.015
-    cb_gap = 0.012
-    title_h = 0.06
+    # Layout plein écran : ratios normalisés légèrement ajustés selon S
+    inv = 1.0 / _STYLE_SCALE
+    margin = _clamp(0.04 + 0.01 * (inv - 1.0), 0.03, 0.06)
+    cb_w = _clamp(0.015 + 0.005 * (inv - 1.0), 0.012, 0.024)
+    cb_gap = _clamp(0.012 + 0.004 * (inv - 1.0), 0.008, 0.018)
+    title_h = _clamp(0.06 + 0.012 * (inv - 1.0), 0.054, 0.09)
 
     map_left = margin
     map_bottom = margin
@@ -222,63 +378,14 @@ def create_single_map(mode, prob_map=None, mean_conc=None,
                         cb_w, map_h * 0.9])
     cax.set_facecolor("#08080f")
 
-    # Fond de carte
-    ax.set_extent(data_ext, crs=data_crs)
-    bg_path = VISUALIZATION.get("bg_image")
-    if bg_path and os.path.isfile(bg_path):
-        bg_img = plt.imread(bg_path)
-        ax.imshow(bg_img, origin="upper", extent=data_ext,
-                  transform=data_crs, zorder=0, interpolation="bilinear")
-    else:
-        ax.stock_img()
-
-    ax.add_feature(cfeature.NaturalEarthFeature(
-        "physical", "coastline", "50m",
-        edgecolor="#cccccc", facecolor="none", linewidth=1.2), zorder=3)
-    ax.add_feature(cfeature.NaturalEarthFeature(
-        "cultural", "admin_0_boundary_lines_land", "50m",
-        edgecolor="#999999", facecolor="none", linewidth=0.8,
-        linestyle="--"), zorder=3)
-    ax.add_feature(cfeature.NaturalEarthFeature(
-        "physical", "lakes", "50m",
-        edgecolor="#666666", facecolor="#1a3050", linewidth=0.5), zorder=2)
-
-    # Source
-    ax.plot(SOURCE["lon"], SOURCE["lat"], marker="*",
-            markersize=marker_source, color="#ff0000",
-            markeredgecolor="#ffff00", markeredgewidth=1.2,
-            transform=data_crs, zorder=15)
-
-    # Villes (fontes agrandies)
-    cities = [
-        ("Tchernobyl",      30.10, 51.39, font_city_big, "#ff4444",  0.7,  0.4),
-        ("Moscou",          37.62, 55.75, font_city_big, "white",    0.7,  0.4),
-        ("Kiev",            30.52, 50.45, font_city_big, "white",    0.7, -0.9),
-        ("Minsk",           27.56, 53.90, font_city, "#dddddd",     0.7,  0.4),
-        ("Stockholm",       18.07, 59.33, font_city, "#dddddd",     0.7,  0.4),
-        ("Helsinki",        24.94, 60.17, font_city, "#dddddd",    -3.5,  0.1),
-        ("Berlin",          13.40, 52.52, font_city, "#dddddd",     0.7,  0.4),
-        ("Paris",            2.35, 48.86, font_city_big, "white",    0.7,  0.4),
-        ("Londres",         -0.12, 51.51, font_city, "#dddddd",     0.7,  0.4),
-        ("Rome",            12.50, 41.90, font_city, "#dddddd",     0.7,  0.4),
-        ("Ankara",          32.87, 39.93, font_city, "#dddddd",     0.7,  0.4),
-        ("Varsovie",        21.01, 52.23, font_city, "#dddddd",     0.7,  0.4),
-        ("Vienne",          16.37, 48.21, font_city, "#dddddd",     0.7,  0.4),
-        ("Bucarest",        26.10, 44.43, font_city, "#dddddd",     0.7,  0.4),
-        ("St-Pétersbourg",  30.32, 59.93, font_city, "#dddddd",     0.7,  0.4),
-    ]
-    outline = [pe.withStroke(linewidth=outline_w, foreground="black")]
-    for name, lon, lat, size, color, dx, dy in cities:
-        ax.plot(lon, lat, "o", markersize=marker_city, color=color,
-                transform=data_crs, zorder=12)
-        ax.text(lon + dx, lat + dy, name, fontsize=size, color=color,
-                transform=data_crs, zorder=12,
-                fontweight="bold" if name == "Tchernobyl" else "normal",
-                path_effects=outline)
-
-    for sp in ax.spines.values():
-        sp.set_edgecolor("#444444")
-        sp.set_linewidth(1.5)
+    _setup_map_ax(
+        ax,
+        data_crs,
+        add_cities=True,
+        title=None,
+        add_legend=True,
+        add_scalebar=True,
+    )
 
     # ── Overlay de données ────────────────────────────────────────────
     if mode == "probability":
@@ -340,7 +447,7 @@ def create_single_map(mode, prob_map=None, mean_conc=None,
                 traj_lon[t_last, alive], traj_lat[t_last, alive]
             )
             ax.scatter(lons, lats,
-                       s=4, c="#ffcc00", alpha=0.6,
+                       s=_SCATTER_SIZE * 2.0, c="#ffcc00", alpha=0.6,
                        transform=data_crs, zorder=6, edgecolors="none")
         cb_label = "Densité instantanée"
         if filename is None:
@@ -353,20 +460,19 @@ def create_single_map(mode, prob_map=None, mean_conc=None,
     cb.set_label(cb_label, color="white", fontsize=font_cb)
     cb.ax.tick_params(colors="white", labelsize=font_cb_tick)
     cb.outline.set_edgecolor("#555555")
-    cb.outline.set_linewidth(1.0)
+    cb.outline.set_linewidth(_scale(1.0, _STYLE_SCALE, 0.7, 1.8))
 
     # Titre
     fig.suptitle(title, fontsize=font_title, fontweight="bold",
-                 color="white", y=1.0 - title_h * 0.4,
+                 color="white", y=0.99,
                  fontfamily="sans-serif")
 
     path = os.path.join(VISUALIZATION["save_dir"], filename)
-    fig.savefig(path, dpi=VISUALIZATION["dpi"], facecolor=fig.get_facecolor(),
-                bbox_inches="tight", pad_inches=0.1)
+    fig.savefig(path, dpi=dpi, facecolor=fig.get_facecolor())
     plt.close(fig)
 
     size_mb = os.path.getsize(path) / (1024 * 1024)
-    print(f"  [OK] Image 4K sauvegardee : {path}  ({size_mb:.1f} Mo)")
+    print(f"  [OK] Image sauvegardee : {path}  ({size_mb:.1f} Mo)")
     return path
 
 
@@ -379,13 +485,13 @@ def _render_basemap_image():
     Pré-rend le fond de carte (raster + côtes + frontières + villes)
     en un seul array RGBA numpy. Appelé une seule fois.
     """
-    dpi = VISUALIZATION["dpi"]
-    figw, figh = VISUALIZATION["figsize"]
+    resolution, dpi, figsize = _get_resolution_and_figsize()
+    _apply_responsive_style(resolution)
     data_ext = _extent()
     data_crs = ccrs.PlateCarree()
     proj = ccrs.PlateCarree()
 
-    fig_tmp = plt.figure(figsize=(figw, figh), dpi=dpi, facecolor="#08080f")
+    fig_tmp = plt.figure(figsize=figsize, dpi=dpi, facecolor="#08080f")
     ax = fig_tmp.add_axes([0, 0, 1, 1], projection=proj)
     ax.set_extent(data_ext, crs=data_crs)
     ax.set_facecolor("#08080f")
@@ -412,7 +518,7 @@ def _render_basemap_image():
 
     ax.plot(SOURCE["lon"], SOURCE["lat"], marker="*",
             markersize=_MARKER_SOURCE, color="#ff0000",
-            markeredgecolor="#ffff00", markeredgewidth=1.0,
+            markeredgecolor="#ffff00", markeredgewidth=_scale(1.0, _STYLE_SCALE, 0.6, 2.0),
             transform=data_crs, zorder=15)
     _add_cities(ax, data_crs)
 
@@ -439,13 +545,12 @@ def create_proba_video(time_prob_maps,
     comme image statique → rendu ultra-rapide.
     """
     _setup_output_dir()
+    resolution, dpi, figsize = _get_resolution_and_figsize()
+    _apply_responsive_style(resolution)
 
     dt = SIMULATION["dt"]
     n_steps = time_prob_maps.shape[0]
     data_ext = _extent()
-    dpi = VISUALIZATION["dpi"]
-    figw, figh = VISUALIZATION["figsize"]
-    px_w, px_h = int(figw * dpi), int(figh * dpi)
 
     # ── Frames ────────────────────────────────────────────────────────
     fps = VISUALIZATION["video_fps"]
@@ -457,10 +562,11 @@ def create_proba_video(time_prob_maps,
     basemap_rgba = _render_basemap_image()
 
     # ── Figure réelle (axes matplotlib purs = très rapide) ────────────
-    fig = plt.figure(figsize=(figw, figh), facecolor="#08080f", dpi=dpi)
+    fig = plt.figure(figsize=figsize, facecolor="#08080f", dpi=dpi)
 
-    cb_w = 0.018
-    cb_gap = 0.006
+    inv = 1.0 / _STYLE_SCALE
+    cb_w = _clamp(0.018 + 0.004 * (inv - 1.0), 0.015, 0.025)
+    cb_gap = _clamp(0.006 + 0.004 * (inv - 1.0), 0.005, 0.012)
     map_w = 1.0 - cb_w - cb_gap
 
     # Axes carte — bord à bord (plain matplotlib, pas Cartopy)
@@ -496,15 +602,15 @@ def create_proba_video(time_prob_maps,
 
     # Colorbar
     cb = fig.colorbar(im, cax=cax, orientation="vertical")
-    cb.set_label("P(présence)", color="white", fontsize=20)
-    cb.ax.tick_params(colors="white", labelsize=14)
+    cb.set_label("P(présence)", color="white", fontsize=_FONT_CB)
+    cb.ax.tick_params(colors="white", labelsize=_FONT_CB_TICK)
     cb.outline.set_edgecolor("#555555")
-    cb.outline.set_linewidth(1.0)
+    cb.outline.set_linewidth(_scale(1.0, _STYLE_SCALE, 0.7, 1.8))
 
     # ── Info overlay ──────────────────────────────────────────────────
     info_text = ax.text(
         0.012, 0.97, "", transform=ax.transAxes,
-        fontsize=18, color="#00ffaa", va="top", fontfamily="monospace",
+        fontsize=_FONT_INFO, color="#00ffaa", va="top", fontfamily="monospace",
         bbox=dict(boxstyle="round,pad=0.5", facecolor="black",
                   alpha=0.88, edgecolor="#444"),
         zorder=20,
@@ -512,7 +618,7 @@ def create_proba_video(time_prob_maps,
 
     max_text = ax.text(
         0.988, 0.03, "", transform=ax.transAxes,
-        fontsize=16, color="#ffcc00", va="bottom", ha="right",
+        fontsize=_scale(_FONT_INFO, 0.9), color="#ffcc00", va="bottom", ha="right",
         fontfamily="monospace",
         bbox=dict(boxstyle="round,pad=0.4", facecolor="black",
                   alpha=0.85, edgecolor="#444"),
@@ -527,7 +633,7 @@ def create_proba_video(time_prob_maps,
         "Probabilite de presence -- Monte Carlo dynamique"
         f"  ({SIMULATION['n_runs']} runs × {SIMULATION['n_particles']} particules)",
         transform=ax.transAxes,
-        fontsize=22, fontweight="bold", color="white",
+        fontsize=_FONT_TITLE, fontweight="bold", color="white",
         ha="center", va="top", fontfamily="sans-serif",
         bbox=dict(boxstyle="round,pad=0.5", facecolor="black",
                   alpha=0.7, edgecolor="#444"),
@@ -536,7 +642,7 @@ def create_proba_video(time_prob_maps,
 
     date_text = ax.text(
         0.5, 0.012, "", transform=ax.transAxes,
-        fontsize=20, fontweight="bold", color="white",
+        fontsize=_FONT_BAR, fontweight="bold", color="white",
         ha="center", va="bottom", fontfamily="monospace",
         bbox=dict(boxstyle="round,pad=0.4", facecolor="black",
                   alpha=0.75, edgecolor="#444"),
@@ -574,7 +680,7 @@ def create_proba_video(time_prob_maps,
         return [im, date_text, info_text, max_text]
 
     # ── Encodage ──────────────────────────────────────────────────────
-    print(f"  Encodage 4K ({total_frames} frames a {fps} fps)...")
+    print(f"  Encodage video proba ({total_frames} frames a {fps} fps)...")
 
     anim = FuncAnimation(fig, update, frames=total_frames,
                          interval=1000 // fps, blit=False)
@@ -612,6 +718,8 @@ def create_video(traj_lon, traj_lat, active, time_density_maps,
                  filename="chernobyl_simulation.mp4"):
 
     _setup_output_dir()
+    resolution, dpi, figsize = _get_resolution_and_figsize()
+    _apply_responsive_style(resolution)
 
     dt = SIMULATION["dt"]
     n_steps = traj_lon.shape[0]
@@ -642,21 +750,22 @@ def create_video(traj_lon, traj_lat, active, time_density_maps,
     #  FIGURE — Layout symétrique avec colorbars dédiées
     # ═════════════════════════════════════════════════════════════════
     fig = plt.figure(
-        figsize=VISUALIZATION["figsize"],   # 32×18 @ 120dpi = 3840×2160
+        figsize=figsize,
         facecolor="#08080f",
-        dpi=VISUALIZATION["dpi"],
+        dpi=dpi,
     )
 
-    # Marges parfaitement symétriques
-    margin_lr = 0.035    # gauche / droite
-    margin_tb = 0.04     # bas
-    bar_h     = 0.025    # hauteur barre de temps
-    gap_bar   = 0.025    # gap entre barre et panneaux (augmenté)
-    gap_h     = 0.06     # gap vertical entre rangées
-    gap_w     = 0.05     # gap horizontal entre colonnes
-    title_h   = 0.055    # espace pour le suptitle (augmenté)
-    cb_w      = 0.012    # largeur colorbar
-    cb_gap    = 0.008    # gap entre panneau et colorbar
+    # Layout responsive (ratios normalisés)
+    inv = 1.0 / _STYLE_SCALE
+    margin_lr = _clamp(0.035 + 0.006 * (inv - 1.0), 0.03, 0.05)
+    margin_tb = _clamp(0.040 + 0.008 * (inv - 1.0), 0.03, 0.055)
+    bar_h = _clamp(0.025 + 0.008 * (inv - 1.0), 0.022, 0.038)
+    gap_bar = _clamp(0.025 + 0.010 * (inv - 1.0), 0.018, 0.042)
+    gap_h = _clamp(0.060 + 0.010 * (inv - 1.0), 0.045, 0.075)
+    gap_w = _clamp(0.050 + 0.010 * (inv - 1.0), 0.040, 0.070)
+    title_h = _clamp(0.055 + 0.012 * (inv - 1.0), 0.052, 0.085)
+    cb_w = _clamp(0.012 + 0.004 * (inv - 1.0), 0.011, 0.020)
+    cb_gap = _clamp(0.008 + 0.003 * (inv - 1.0), 0.006, 0.014)
 
     top_start = 1.0 - title_h
     bar_bottom = top_start - bar_h
@@ -681,7 +790,7 @@ def create_video(traj_lon, traj_lat, active, time_density_maps,
     ax4 = fig.add_axes([col2_left, row2_bottom, panel_w, panel_h], projection=proj)
 
     # Axes dédiés pour les colorbars (parfaitement alignés avec les panneaux)
-    cb_shrink = 0.05  # marge interne haut/bas des colorbars
+    cb_shrink = _clamp(0.05 + 0.02 * (inv - 1.0), 0.04, 0.09)
     cax1 = fig.add_axes([col1_left + panel_w + cb_gap,
                          row1_bottom + panel_h * cb_shrink,
                          cb_w, panel_h * (1 - 2 * cb_shrink)])
@@ -705,18 +814,19 @@ def create_video(traj_lon, traj_lat, active, time_density_maps,
     ax_bar.tick_params(colors="white", labelsize=_FONT_CB_TICK)
     for sp in ax_bar.spines.values():
         sp.set_color("#444")
-        sp.set_linewidth(1.0)
+        sp.set_linewidth(_scale(1.0, _STYLE_SCALE, 0.7, 1.8))
     progress_fill = ax_bar.axvspan(0, 0, color="#ff4444", alpha=0.5)
     time_text = ax_bar.text(0.5, 0.5, "", transform=ax_bar.transAxes,
                             ha="center", va="center", fontsize=_FONT_BAR,
                             color="white", fontweight="bold",
-                            fontfamily="monospace")
+                            fontfamily="monospace", clip_on=False)
 
     # ═════════════════════════════════════════════════════════════════
     # PANNEAU 1 — Nuage instantané
     # ═════════════════════════════════════════════════════════════════
     _setup_map_ax(ax1, data_crs, add_cities=True,
-                  title="Nuage instantane -- particules actives")
+                  title="Nuage instantane -- particules actives",
+                  add_legend=True, add_scalebar=True)
 
     scatter = ax1.scatter([], [], s=_SCATTER_SIZE, c="#ffcc00", alpha=0.55,
                           transform=data_crs, zorder=6, edgecolors="none")
@@ -802,7 +912,7 @@ def create_video(traj_lon, traj_lat, active, time_density_maps,
         "Simulation Monte Carlo -- Propagation du nuage de Tchernobyl"
         "   (26 avril – 15 mai 1986)",
         fontsize=_FONT_SUPTITLE, fontweight="bold", color="white",
-        y=1.0 - title_h * 0.35,
+        y=0.992,
         fontfamily="sans-serif",
     )
 
@@ -821,10 +931,16 @@ def create_video(traj_lon, traj_lat, active, time_density_maps,
         # Barre de progression
         progress_fill.remove()
         progress_fill = ax_bar.axvspan(0, t_hours, color="#ff4444", alpha=0.5)
-        time_text.set_text(
-            f"t + {t_hours:>5.0f}h   │   {date_str}   │   "
-            f"{_get_wind_phase(t_hours)}"
-        )
+        if _STYLE_SCALE < 0.9:
+            time_text.set_text(
+                f"t + {t_hours:>5.0f}h   │   {date_str}\n"
+                f"{_get_wind_phase(t_hours)}"
+            )
+        else:
+            time_text.set_text(
+                f"t + {t_hours:>5.0f}h   │   {date_str}   │   "
+                f"{_get_wind_phase(t_hours)}"
+            )
 
         # Panneau 1 : particules + heatmap instantanée
         alive = active[t]
@@ -855,9 +971,9 @@ def create_video(traj_lon, traj_lat, active, time_density_maps,
         return [scatter, im_inst, im_cum, progress_fill, time_text, info_text]
 
     # ── Encodage H.264 haute qualité ──────────────────────────────────
-    print(f"  Encodage 4K UHD ({n_frames} frames a {fps} fps)...")
-    print(f"     Résolution : {int(VISUALIZATION['figsize'][0] * VISUALIZATION['dpi'])}"
-          f"×{int(VISUALIZATION['figsize'][1] * VISUALIZATION['dpi'])} px")
+        print(f"  Encodage video ({n_frames} frames a {fps} fps)...")
+        print(f"     Résolution : {resolution[0]}×{resolution[1]} px")
+        print(f"     DPI        : {dpi}")
     print(f"     Bitrate    : {VISUALIZATION['video_bitrate'] // 1000} Mbps")
 
     anim = FuncAnimation(fig, update, frames=n_frames,
@@ -873,9 +989,9 @@ def create_video(traj_lon, traj_lat, active, time_density_maps,
             "-pix_fmt", "yuv420p",    # Compatibilité maximale
             "-movflags", "+faststart",  # Streaming-friendly
         ],
-        metadata={"title": "Chernobyl Monte Carlo Simulation — 4K",
+        metadata={"title": "Chernobyl Monte Carlo Simulation",
                   "artist": "MonteCarloSimu",
-                  "comment": "3840x2160 120fps"},
+              "comment": f"{resolution[0]}x{resolution[1]} @ {fps}fps"},
     )
 
     path = os.path.join(VISUALIZATION["save_dir"], filename)
@@ -884,5 +1000,38 @@ def create_video(traj_lon, traj_lat, active, time_density_maps,
 
     # Afficher la taille du fichier
     size_mb = os.path.getsize(path) / (1024 * 1024)
-    print(f"  [OK] Video 4K sauvegardee : {path}  ({size_mb:.1f} Mo)")
+    print(f"  [OK] Video sauvegardee : {path}  ({size_mb:.1f} Mo)")
     return path
+
+
+def save_responsive_sanity_frames(prob_map, enabled=False,
+                                  resolutions=((1920, 1080),
+                                               (2560, 1440),
+                                               (3840, 2160))):
+    """
+    Génère des PNG de contrôle multi-résolution (opt-in).
+    N'est jamais exécuté par défaut.
+    """
+    if not enabled:
+        return []
+
+    _setup_output_dir()
+    old_res = VISUALIZATION.get("resolution")
+    old_fig = VISUALIZATION.get("figsize")
+
+    outputs = []
+    for w, h in resolutions:
+        VISUALIZATION["resolution"] = (int(w), int(h))
+        out = create_single_map(
+            mode="probability",
+            prob_map=prob_map,
+            filename=f"responsive_sanity_{int(w)}x{int(h)}.png",
+        )
+        outputs.append(out)
+
+    if old_res is not None:
+        VISUALIZATION["resolution"] = old_res
+    if old_fig is not None:
+        VISUALIZATION["figsize"] = old_fig
+
+    return outputs

@@ -101,6 +101,16 @@ def _s(base):
     """Multiplie une dimension de base par le ratio resolution / 2K."""
     return base * (VISUALIZATION["figsize"][0] * VISUALIZATION["dpi"]) / 2560.0
 
+
+def _s_font(base, min_pt=9.5):
+    """Scaling typographique avec plancher pour rester lisible en 720p."""
+    return max(_s(base), min_pt)
+
+
+def _s_stroke(base, min_w=1.25):
+    """Epaisseur de contour texte avec plancher de lisibilité."""
+    return max(_s(base), min_w)
+
 # ═══════════════════════════════════════════════════════════════════════
 #  Helpers
 # ═══════════════════════════════════════════════════════════════════════
@@ -287,9 +297,9 @@ def create_globe_map(mode, prob_map=None, mean_conc=None,
 
     # ── Légende — bande noire gauche ──────────────────────────────────
     fig.text(0.03, 0.92, title,
-             fontsize=_s(_F_INFO), color="#c0c0d4",
+             fontsize=_s_font(_F_INFO, min_pt=10.0), color="#c0c0d4",
              va="top", ha="left", fontfamily="monospace",
-             path_effects=_outline(_s(2.0)))
+             path_effects=_outline(_s_stroke(2.0, min_w=1.4)))
 
     # ── Sauvegarde ────────────────────────────────────────────────────
     path = os.path.join(VISUALIZATION["save_dir"], fn)
@@ -365,9 +375,9 @@ def create_globe_video(time_prob_maps,
     # ── Info — stack vertical, bande noire gauche ─────────────────────
     info = fig.text(
         0.03, 0.92, "",
-        fontsize=_s(_F_INFO), color="#c0c0d4", va="top", ha="left",
+        fontsize=_s_font(_F_INFO, min_pt=10.0), color="#c0c0d4", va="top", ha="left",
         fontfamily="monospace", linespacing=1.6,
-        path_effects=_outline(_s(2.2)),
+        path_effects=_outline(_s_stroke(2.2, min_w=1.5)),
     )
 
     # ── Update ────────────────────────────────────────────────────────
